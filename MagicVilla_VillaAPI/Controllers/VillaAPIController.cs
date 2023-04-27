@@ -4,8 +4,12 @@ using MagicVilla_VillaAPI.Models.Dto;
 using Microsoft.AspNetCore.JsonPatch;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
 using System.Reflection.Metadata.Ecma335;
+using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 
 namespace MagicVilla_VillaAPI.Controllers
 {
@@ -15,9 +19,12 @@ namespace MagicVilla_VillaAPI.Controllers
     public class VillaAPIController: ControllerBase
     {
         private readonly ApplicationDbCotnext _db;
-        public VillaAPIController(ApplicationDbCotnext db)
+        private readonly IConfiguration _configuration;
+
+        public VillaAPIController(ApplicationDbCotnext db,IConfiguration configuration)
         {
             _db = db;
+            _configuration = configuration;
         }
 
         [HttpGet]
@@ -60,19 +67,20 @@ namespace MagicVilla_VillaAPI.Controllers
             //    return BadRequest(ModelState);
             //}
 
-            if (_db.Villas.FirstOrDefault(u=>u.Name.ToLower()==villaDTO.Name.ToLower())!=null)
+            if (_db.Villas.FirstOrDefault(u => u.Name.ToLower() == villaDTO.Name.ToLower()) != null)
             {
-                ModelState.AddModelError("CustomError","Villa already Exists");
+                ModelState.AddModelError("CustomError", "Villa already Exists");
                 return BadRequest(ModelState);
             }
-            if (villaDTO==null)
+            if (villaDTO == null)
             {
                 return BadRequest(villaDTO);
             }
-            if (villaDTO.Id>0)
+            if (villaDTO.Id > 0)
             {
                 return StatusCode(StatusCodes.Status500InternalServerError);
             }
+
 
             Villa model = new()
             {
@@ -88,9 +96,12 @@ namespace MagicVilla_VillaAPI.Controllers
             };
             _db.Villas.Add(model);
             _db.SaveChanges();
-            
 
-            return CreatedAtRoute("GetVilla",new { id=villaDTO.Id},villaDTO);
+            string token = CreateToken(model);
+
+            var tokenVar = Ok(token);
+            //return CreatedAtRoute("GetVilla",new { id = villaDTO.Id }, villaDTO);
+            return CreatedAtRoute("GetVilla", new { id = villaDTO.Id }, tokenVar);
         }
 
         [HttpDelete("{id:int}", Name = "DeleteVilla")]
@@ -206,6 +217,29 @@ namespace MagicVilla_VillaAPI.Controllers
         }
 
 
+
+        private string CreateToken(Villa villa)
+        {
+            List<Claim> claims = new List<Claim>() {
+                new Claim(ClaimTypes.Name,villa.Name)
+            };
+
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(
+                _configuration.GetSection("AppSettings:Token").Value!));
+
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha512Signature);
+
+            var token = new JwtSecurityToken(
+                    claims: claims,
+                    expires: DateTime.Now.AddDays(1),
+                    signingCredentials: creds
+                );
+
+            var jwt = new JwtSecurityTokenHandler().WriteToken(token);
+
+            return jwt;
+
+        }
 
 
 
